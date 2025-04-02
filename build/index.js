@@ -1,161 +1,101 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-const NWS_API_BASE = "https://api.weather.gov";
-const USER_AGENT = "weather-app/1.0";
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+// import { z } from "zod";
+let APP_ID = '';
+let APP_SECRET = '';
+let OPERATOR_ID = '';
+let TENANT_ID = '';
+const TB_API_BASE = 'https://open.teambition.com';
+let accessToken = '';
+let headers = {};
 // Create server instance
 const server = new McpServer({
-    name: "weather",
-    version: "1.0.0",
+    name: 'teambition-mcp',
+    version: '1.0.0',
     capabilities: {
         resources: {},
         tools: {},
     },
 });
-// Helper function for making NWS API requests
-async function makeNWSRequest(url) {
-    const headers = {
-        "User-Agent": USER_AGENT,
-        Accept: "application/geo+json",
-    };
+// Helper function for making API requests
+async function makeRequest(url, options = {}) {
     try {
-        const response = await fetch(url, { headers });
+        const response = await fetch(url, { headers, ...options });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         return (await response.json());
     }
     catch (error) {
-        console.error("Error making NWS request:", error);
+        console.error('Error making NWS request:', error);
         return null;
     }
 }
-// Format alert data
-function formatAlert(feature) {
-    const props = feature.properties;
-    return [
-        `Event: ${props.event || "Unknown"}`,
-        `Area: ${props.areaDesc || "Unknown"}`,
-        `Severity: ${props.severity || "Unknown"}`,
-        `Status: ${props.status || "Unknown"}`,
-        `Headline: ${props.headline || "No headline"}`,
-        "---",
-    ].join("\n");
+// Format task data
+function formatTasks(tasksResponse) {
+    const props = tasksResponse.result;
+    return props.map((task) => {
+        return [
+            `IsDone: ${task.isDone}`,
+            `TaskTitle: ${task.content || 'Not set yet'}`,
+            `TaskContent: ${task.note || 'Not set yet'}`,
+            `DueDate: ${task.dueDate || 'Not set yet'}`,
+            '---',
+        ].join('\n');
+    });
 }
-// Register weather tools
-server.tool("get-alerts", "Get weather alerts for a state", {
-    state: z.string().length(2).describe("Two-letter state code (e.g. CA, NY)"),
-}, async ({ state }) => {
-    const stateCode = state.toUpperCase();
-    const alertsUrl = `${NWS_API_BASE}/alerts?area=${stateCode}`;
-    const alertsData = await makeNWSRequest(alertsUrl);
-    if (!alertsData) {
+// Get Teambition app access token
+async function getAccessToken() {
+    const res = await makeRequest(`${TB_API_BASE}/api/appToken`, {
+        method: 'POST',
+        body: JSON.stringify({
+            appId: APP_ID,
+            appSecret: APP_SECRET,
+        }),
+    });
+    if (!res) {
+        throw new Error('Failed to get Teambition access token');
+    }
+    return res.appToken;
+}
+// Register tools
+server.tool('get-user-tasks', 'Get user teambition tasks', {}, getUserTasks);
+async function getUserTasks() {
+    const url = `${TB_API_BASE}/api/v3/usertasks/search?pageSize=10&roleTypes=creator%2Cexecutor%2CinvolveMember`;
+    const data = await makeRequest(url);
+    if (!data || data.code !== 200) {
         return {
             content: [
                 {
-                    type: "text",
-                    text: "Failed to retrieve alerts data",
+                    type: 'text',
+                    text: 'Failed to retrieve tasks data',
                 },
             ],
         };
     }
-    const features = alertsData.features || [];
-    if (features.length === 0) {
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: `No active alerts for ${stateCode}`,
-                },
-            ],
-        };
-    }
-    const formattedAlerts = features.map(formatAlert);
-    const alertsText = `Active alerts for ${stateCode}:\n\n${formattedAlerts.join("\n")}`;
+    const t = formatTasks(data);
     return {
         content: [
             {
-                type: "text",
-                text: alertsText,
+                type: 'text',
+                text: `Current user ticks is:\n\n${t.join('\n')}`,
             },
         ],
     };
-});
-server.tool("get-forecast", "Get weather forecast for a location", {
-    latitude: z.number().min(-90).max(90).describe("Latitude of the location"),
-    longitude: z.number().min(-180).max(180).describe("Longitude of the location"),
-}, async ({ latitude, longitude }) => {
-    // Get grid point data
-    const pointsUrl = `${NWS_API_BASE}/points/${latitude.toFixed(4)},${longitude.toFixed(4)}`;
-    const pointsData = await makeNWSRequest(pointsUrl);
-    if (!pointsData) {
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: `Failed to retrieve grid point data for coordinates: ${latitude}, ${longitude}. This location may not be supported by the NWS API (only US locations are supported).`,
-                },
-            ],
-        };
-    }
-    const forecastUrl = pointsData.properties?.forecast;
-    if (!forecastUrl) {
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: "Failed to get forecast URL from grid point data",
-                },
-            ],
-        };
-    }
-    // Get forecast data
-    const forecastData = await makeNWSRequest(forecastUrl);
-    if (!forecastData) {
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: "Failed to retrieve forecast data",
-                },
-            ],
-        };
-    }
-    const periods = forecastData.properties?.periods || [];
-    if (periods.length === 0) {
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: "No forecast periods available",
-                },
-            ],
-        };
-    }
-    // Format forecast periods
-    const formattedForecast = periods.map((period) => [
-        `${period.name || "Unknown"}:`,
-        `Temperature: ${period.temperature || "Unknown"}°${period.temperatureUnit || "F"}`,
-        `Wind: ${period.windSpeed || "Unknown"} ${period.windDirection || ""}`,
-        `${period.shortForecast || "No forecast available"}`,
-        "---",
-    ].join("\n"));
-    const forecastText = `Forecast for ${latitude}, ${longitude}:\n\n${formattedForecast.join("\n")}`;
-    return {
-        content: [
-            {
-                type: "text",
-                text: forecastText,
-            },
-        ],
-    };
-});
+}
 async function main() {
+    [APP_ID, APP_SECRET, OPERATOR_ID, TENANT_ID] = process.argv.slice(2);
+    headers = {
+        'X-Operator-Id': OPERATOR_ID,
+        Authorization: `Bearer ${await getAccessToken()}`,
+        'X-Tenant-Id': TENANT_ID,
+        'X-Tenant-Type': 'organization',
+    };
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("Weather MCP Server running on stdio");
+    console.error('Teambition MCP Server running on stdio');
 }
 main().catch((error) => {
-    console.error("Fatal error in main():", error);
+    console.error('Fatal error in main():', error);
     process.exit(1);
 });
