@@ -1,13 +1,31 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+// import { z } from "zod";
 
-const NWS_API_BASE = "https://api.weather.gov";
-const USER_AGENT = "weather-app/1.0";
+const TEAMBITION_API_BASE = "https://open.teambition.com";
+let accessToken = "";
+let headers = {};
+
+interface UserTasksResponse {
+  "code": number,
+  "count": number,
+  "result": [
+    {
+      "content": string,
+      "created": string,
+      "startDate": string,
+      "dueDate": string,
+      "isDone": boolean,
+      "note": string,
+      "projectId": string,
+      "updated": string,
+    }
+  ]
+}
 
 // Create server instance
 const server = new McpServer({
-  name: "weather",
+  name: "teambition-mcp",
   version: "1.0.0",
   capabilities: {
     resources: {},
@@ -16,14 +34,9 @@ const server = new McpServer({
 });
 
 // Helper function for making NWS API requests
-async function makeNWSRequest<T>(url: string): Promise<T | null> {
-  const headers = {
-    "User-Agent": USER_AGENT,
-    Accept: "application/geo+json",
-  };
-
+async function makeRequest<T>(url: string, options: RequestInit = {}): Promise<T | null> {
   try {
-    const response = await fetch(url, { headers });
+    const response = await fetch(url, { headers, ...options });
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -34,83 +47,74 @@ async function makeNWSRequest<T>(url: string): Promise<T | null> {
   }
 }
 
-interface AlertFeature {
-  properties: {
-    event?: string;
-    areaDesc?: string;
-    severity?: string;
-    status?: string;
-    headline?: string;
-  };
+async function getTeambitionAuthToken() {
+  const res = await makeRequest<{ appToken: string }>(`${TEAMBITION_API_BASE}/api/appToken`, {
+    method: "POST",
+    body: JSON.stringify({
+      appId: process.argv[2],
+      appSecret: process.argv[3],
+    }),
+  })
+  if (!res) {
+    throw new Error("Failed to get Teambition auth token")
+  }
+  return res.appToken
 }
 
 // Format alert data
-function formatAlert(feature: AlertFeature): string {
-  const props = feature.properties;
-  return [
-    `Event: ${props.event || "Unknown"}`,
-    `Area: ${props.areaDesc || "Unknown"}`,
-    `Severity: ${props.severity || "Unknown"}`,
-    `Status: ${props.status || "Unknown"}`,
-    `Headline: ${props.headline || "No headline"}`,
-    "---",
-  ].join("\n");
-}
-
-interface AlertsResponse {
-  features: AlertFeature[];
+function formatTasks(tasksResponse: UserTasksResponse): string[] {
+  const props = tasksResponse.result;
+  return props.map((task) => {
+    return [
+      `IsDone: ${task.isDone || "Unknown"}`,
+      `TaskTitle: ${task.content || "Unknown"}`,
+      `TaskContent: ${task.note || "Unknown"}`,
+      `DueDate: ${task.dueDate || "Unknown"}`,
+      "---",
+    ].join("\n");
+  })
 }
 
 // Register weather tools
 server.tool(
-  "get-alerts",
-  "Get weather alerts for a state",
-  {
-    state: z.string().length(2).describe("Two-letter state code (e.g. CA, NY)"),
-  },
-  async ({ state }) => {
-    const stateCode = state.toUpperCase();
-    const alertsUrl = `${NWS_API_BASE}/alerts?area=${stateCode}`;
-    const alertsData = await makeNWSRequest<AlertsResponse>(alertsUrl);
+  "get-user-tasks",
+  "Get user teambition tasks",
+  {},
+  getUserTasks,
+);
 
-    if (!alertsData) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Failed to retrieve alerts data",
-          },
-        ],
-      };
-    }
-
-    const features = alertsData.features || [];
-    if (features.length === 0) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `No active alerts for ${stateCode}`,
-          },
-        ],
-      };
-    }
-
-    const formattedAlerts = features.map(formatAlert);
-    const alertsText = `Active alerts for ${stateCode}:\n\n${formattedAlerts.join("\n")}`;
-
+async function getUserTasks() {
+  const url = `${TEAMBITION_API_BASE}/api/v3/usertasks/search?pageSize=10&roleTypes=creator%2Cexecutor%2CinvolveMember`;
+  const data = await makeRequest<UserTasksResponse>(url);
+  if (!data || data.code !== 200) {
     return {
       content: [
         {
-          type: "text",
-          text: alertsText,
+          type: "text" as const,
+          text: "Failed to retrieve tasks data",
         },
       ],
     };
-  },
-);
+  }
+  const t = formatTasks(data)
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `Current user ticks is:\n\n${t.join("\n")}`,
+      },
+    ],
+  };
+}
 
 async function main() {
+  accessToken = await getTeambitionAuthToken()
+  headers = {
+    'X-Operator-Id': process.argv[4],
+    'Authorization': `Bearer ${accessToken}`,
+    'X-Tenant-Id': process.argv[5],
+    'X-Tenant-Type': 'organization',
+  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("Teambition MCP Server running on stdio");
