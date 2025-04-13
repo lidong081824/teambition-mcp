@@ -76,7 +76,9 @@ server.tool('get-email-price', 'Get email pricing plan', {
 }, getEmailPrice)
 
 async function main() {
-  console.log(await getEmailPrice({ users: 177, years: 3 }))
+  const transport = new StdioServerTransport()
+  await server.connect(transport)
+  console.error('Teambition MCP Server running on stdio')
 }
 
 main().catch((error) => {

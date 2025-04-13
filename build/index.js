@@ -6,7 +6,6 @@ let APP_SECRET = '';
 let OPERATOR_ID = '';
 let TENANT_ID = '';
 const TB_API_BASE = 'https://open.teambition.com';
-let accessToken = '';
 let headers = {};
 // Create server instance
 const server = new McpServer({
