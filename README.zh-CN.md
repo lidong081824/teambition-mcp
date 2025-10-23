@@ -405,7 +405,7 @@ A: 请在 GitHub 上提交 Issue，详细描述你遇到的问题或想要的功
 - 📘 [Teambition API 文档](https://open.teambition.com/docs)
 - 🔗 [Model Context Protocol](https://modelcontextprotocol.io)
 - 📖 [Claude Code 文档](https://docs.claude.com)
-- 💬 [GitHub Issues](https://github.com/your-username/teambition-mcp/issues)
+- 💬 [GitHub Issues](https://github.com/lidong081824/teambition-mcp/issues)
 
 ---
 

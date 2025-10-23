@@ -405,7 +405,7 @@ This project is licensed under the **ISC License**. See [LICENSE](LICENSE) for d
 - 📘 [Teambition API Documentation](https://open.teambition.com/docs)
 - 🔗 [Model Context Protocol](https://modelcontextprotocol.io)
 - 📖 [Claude Code Documentation](https://docs.claude.com)
-- 💬 [GitHub Issues](https://github.com/your-username/teambition-mcp/issues)
+- 💬 [GitHub Issues](https://github.com/lidong081824/teambition-mcp/issues)
 
 ---
 
