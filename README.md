@@ -83,7 +83,7 @@ teambition-mcp/
 
 ```bash
 # 1. Clone the project to your local machine
-git clone <repository-url>
+git clone <https://github.com/lidong081824/teambition-mcp.git>
 cd teambition-mcp
 
 # 2. Install project dependencies

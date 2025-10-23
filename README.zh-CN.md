@@ -83,7 +83,7 @@ teambition-mcp/
 
 ```bash
 # 1. 克隆项目到本地
-git clone <repository-url>
+git clone <https://github.com/lidong081824/teambition-mcp.git>
 cd teambition-mcp
 
 # 2. 安装项目依赖
